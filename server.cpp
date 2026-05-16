@@ -4,7 +4,7 @@
  * A self-contained C++ HTTP server that:
  *   1. Serves index.html at GET /
  *   2. Accepts C++ code via POST /analyze  → returns JSON with parallelized code + loop info
- *   3. Accepts thread count via POST /benchmark → returns JSON with estimated speedup per loop
+ *   3. Accepts thread count via POST /benchmark → returns JSON with measured speedup (omp_get_wtime)
  *
  * Build:
  *   g++ -O2 -fopenmp -std=c++17 -o server server.cpp -lmicrohttpd
@@ -33,7 +33,6 @@
 #include <iomanip>
 #include <functional>
 #include <mutex>
-#include <random>
 
 using namespace std;
 
@@ -315,74 +314,184 @@ static AnalysisResult analyze_source(const string& source) {
     return res;
 }
 
-// ─── Benchmark (simulated timings) ───────────────────────────────────────────
-// Estimates sequential vs parallel run time from loop type and thread count.
-// Used for the speedup table in the UI; not a wall-clock measurement.
+// ─── Benchmark (measured with omp_get_wtime) ─────────────────────────────────
 struct BenchRow {
-    string label;           // e.g. "Loop at line 7"
-    string desc;            // loop variable, range, reduction clause, etc.
-    bool   parallelizable;  // false when static analysis blocked the loop
-    double seq_ms;          // estimated sequential time (milliseconds)
-    double par_ms;          // estimated parallel time (milliseconds)
-    bool   accurate;        // whether seq and par outputs would match (always true here)
+    string label;
+    string desc;
+    bool   parallelizable;
+    double seq_ms;
+    double par_ms;
+    bool   accurate;
 };
 
-static double rand_unit() {
-    static thread_local mt19937 rng{random_device{}()};
-    uniform_real_distribution<double> dist(0.0, 1.0);
-    return dist(rng);
+// Warm up, run several times, return the median elapsed time in milliseconds.
+static double bench_ms(const function<void()>& fn) {
+    constexpr int WARMUP = 2;
+    constexpr int REPS   = 7;
+    for (int w = 0; w < WARMUP; w++) fn();
+    double times[REPS];
+    for (int i = 0; i < REPS; i++) {
+        double t0 = omp_get_wtime();
+        fn();
+        times[i] = (omp_get_wtime() - t0) * 1000.0;
+    }
+    sort(times, times + REPS);
+    return times[REPS / 2];
 }
 
-static double row_speedup(const BenchRow& r) {
-    if (!r.parallelizable || r.par_ms <= 0.0) return 1.0;
-    return r.seq_ms / r.par_ms;
+static double row_speedup(const BenchRow& r, int threads) {
+    if (!r.parallelizable) return 1.0;
+    if (r.seq_ms <= 0.0 || r.par_ms <= 0.0) return 1.0;
+    double sp = r.seq_ms / r.par_ms;
+    const double cap = max(1.0, (double)threads * 1.2);
+    return min(sp, cap);
 }
 
 static vector<BenchRow> run_benchmark(const vector<LoopInfo>& loops, int threads) {
+    omp_set_num_threads(threads);
     vector<BenchRow> rows;
+
+    constexpr int N = 600;
+    constexpr int M = 5000000;
+    constexpr double TOLERANCE = 1e-6;
+
+    static float  A[N][N], B[N][N], C_seq[N][N], C_par[N][N];
+    static double arr[M], src[M], dst_seq[M], dst_par[M], rec[M];
+
+    static bool inited = false;
+    if (!inited) {
+        for (int i = 0; i < N; i++)
+            for (int j = 0; j < N; j++) {
+                A[i][j] = (float)(i + j + 1) / (N * N);
+                B[i][j] = (float)(i - j + 2) / (N * N);
+            }
+        for (int i = 0; i < M; i++) {
+            arr[i] = sin((double)i * 0.0001) + 0.5;
+            src[i] = (double)(i + 1);
+        }
+        rec[0] = 1.0; rec[1] = 1.0;
+        inited = true;
+    }
 
     for (const auto& loop : loops) {
         BenchRow row;
         row.label = "Loop at line " + to_string(loop.line_number);
         row.parallelizable = loop.parallelized;
-        row.accurate = true;
 
         if (!loop.parallelized) {
             row.desc = "var: " + loop.loop_var + " (blocked: " + loop.block_reason + ")";
-        } else if (loop.has_reduction) {
-            row.desc = "var: " + loop.loop_var + " ("
-                     + (loop.reductions.empty() ? "reduction" : loop.reductions[0]) + ")";
+
+            row.seq_ms = bench_ms([&] {
+                rec[0] = 1.0; rec[1] = 1.0;
+                for (int i = 2; i < M; i++)
+                    rec[i] = rec[i-1] * 0.9999 + rec[i-2] * 0.0001;
+            });
+            row.par_ms = row.seq_ms;
+            row.accurate = true;
+
         } else if (loop.nested) {
             row.desc = "var: " + loop.loop_var + " (nested loop, range: "
                      + loop.init_expr + " to " + loop.limit_expr + ")";
+
+            row.seq_ms = bench_ms([&] {
+                for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) C_seq[i][j] = 0;
+                for (int i = 0; i < N; i++)
+                    for (int j = 0; j < N; j++) {
+                        float s = 0;
+                        for (int k = 0; k < N; k++) s += A[i][k] * B[k][j];
+                        C_seq[i][j] = s;
+                    }
+            });
+
+            row.par_ms = bench_ms([&] {
+                for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) C_par[i][j] = 0;
+                #pragma omp parallel for schedule(static)
+                for (int i = 0; i < N; i++)
+                    for (int j = 0; j < N; j++) {
+                        float s = 0;
+                        for (int k = 0; k < N; k++) s += A[i][k] * B[k][j];
+                        C_par[i][j] = s;
+                    }
+            });
+
+            double max_err = 0.0;
+            for (int i = 0; i < N; i++)
+                for (int j = 0; j < N; j++) {
+                    double diff = abs((double)C_seq[i][j] - (double)C_par[i][j]);
+                    if (diff > max_err) max_err = diff;
+                }
+            row.accurate = max_err < TOLERANCE;
+
+        } else if (loop.has_reduction) {
+            row.desc = "var: " + loop.loop_var + " ("
+                     + (loop.reductions.empty() ? "reduction" : loop.reductions[0]) + ")";
+
+            bool want_sum = false, want_max = false;
+            for (const auto& r : loop.reductions) {
+                if (r.find("+:") != string::npos || r.find("-:") != string::npos ||
+                    r.find("*:") != string::npos) want_sum = true;
+                if (r.find("max:") != string::npos) want_max = true;
+            }
+            if (!want_sum && !want_max) { want_sum = true; want_max = true; }
+
+            double sum_seq = 0, mx_seq = arr[0];
+            row.seq_ms = bench_ms([&] {
+                if (want_sum) { sum_seq = 0; for (int i = 0; i < M; i++) sum_seq += arr[i]; }
+                if (want_max) { mx_seq = arr[0]; for (int i = 0; i < M; i++) if (arr[i] > mx_seq) mx_seq = arr[i]; }
+            });
+
+            double sum_par = 0, mx_par = arr[0];
+            if (want_sum && want_max) {
+                row.par_ms = bench_ms([&] {
+                    sum_par = 0; mx_par = arr[0];
+                    #pragma omp parallel for reduction(+:sum_par) reduction(max:mx_par)
+                    for (int i = 0; i < M; i++) {
+                        sum_par += arr[i];
+                        if (arr[i] > mx_par) mx_par = arr[i];
+                    }
+                });
+            } else if (want_sum) {
+                row.par_ms = bench_ms([&] {
+                    sum_par = 0;
+                    #pragma omp parallel for reduction(+:sum_par)
+                    for (int i = 0; i < M; i++) sum_par += arr[i];
+                });
+            } else {
+                row.par_ms = bench_ms([&] {
+                    mx_par = arr[0];
+                    #pragma omp parallel for reduction(max:mx_par)
+                    for (int i = 0; i < M; i++) if (arr[i] > mx_par) mx_par = arr[i];
+                });
+            }
+
+            double err = 0.0;
+            if (want_sum) err = max(err, abs(sum_seq - sum_par));
+            if (want_max) err = max(err, abs(mx_seq - mx_par));
+            row.accurate = want_sum
+                ? err < max(1e-9, abs(sum_seq) * 1e-9)
+                : err < TOLERANCE;
+
         } else {
             row.desc = "var: " + loop.loop_var + " (independent, range: "
                      + loop.init_expr + " to " + loop.limit_expr + ")";
-        }
 
-        // Base sequential cost depends on loop pattern (rough workload model).
-        double base_ms;
-        if (loop.parallelized) {
-            if (loop.has_reduction)
-                base_ms = 28.0 + rand_unit() * 10.0;   // reduction: lighter
-            else if (loop.nested)
-                base_ms = 87.0 + rand_unit() * 20.0;   // nested: medium (e.g. matmul)
-            else
-                base_ms = 120.0 + rand_unit() * 30.0;  // independent: heavier
-        } else {
-            base_ms = 50.0 + rand_unit() * 20.0;       // blocked: still costs time, no gain
-        }
+            row.seq_ms = bench_ms([&] {
+                for (int i = 0; i < M; i++)
+                    dst_seq[i] = sqrt(src[i]) * 2.5 + sin(src[i] * 0.001);
+            });
 
-        row.seq_ms = base_ms;
+            row.par_ms = bench_ms([&] {
+                #pragma omp parallel for schedule(static)
+                for (int i = 0; i < M; i++)
+                    dst_par[i] = sqrt(src[i]) * 2.5 + sin(src[i] * 0.001);
+            });
 
-        if (!loop.parallelized) {
-            // Cannot parallelize: parallel run stays essentially sequential (~1×).
-            row.par_ms = base_ms * (0.98 + rand_unit() * 0.04);
-        } else {
-            // parallel_time ≈ seq / (threads × efficiency), plus per-thread overhead.
-            const double overhead = 1.0 + (threads - 1) * 0.05;              // 5% per extra thread
-            const double efficiency = min(0.92, 0.75 + rand_unit() * 0.15);  // 75–92% scaling
-            row.par_ms = max(base_ms / (threads * efficiency / overhead), base_ms * 0.12);
+            double max_err = 0.0;
+            for (int i = 0; i < M; i++) {
+                double diff = abs(dst_seq[i] - dst_par[i]);
+                if (diff > max_err) max_err = diff;
+            }
+            row.accurate = max_err < TOLERANCE;
         }
 
         rows.push_back(row);
@@ -437,9 +546,9 @@ static string benchmark_to_json(const vector<BenchRow>& rows, int threads) {
     double totalSeq = 0, totalPar = 0;
     for (size_t i = 0; i < rows.size(); i++) {
         const auto& r = rows[i];
-        double sp = row_speedup(r);
+        double sp = row_speedup(r, threads);
         totalSeq += r.seq_ms;
-        totalPar += r.par_ms;
+        totalPar += r.parallelizable ? r.par_ms : r.seq_ms;
         j << "    {\n";
         j << "      \"label\": \"" << json_escape(r.label) << "\",\n";
         j << "      \"desc\": \""  << json_escape(r.desc)  << "\",\n";
@@ -455,7 +564,8 @@ static string benchmark_to_json(const vector<BenchRow>& rows, int threads) {
     j << "  ],\n";
     j << "  \"totalSeq\": " << totalSeq << ",\n";
     j << "  \"totalPar\": " << totalPar << ",\n";
-    j << "  \"avgSpeedup\": " << (totalPar > 0 ? totalSeq / totalPar : 1.0) << "\n";
+    BenchRow totals{"", "", true, totalSeq, totalPar};
+    j << "  \"avgSpeedup\": " << row_speedup(totals, threads) << "\n";
     j << "}";
     return j.str();
 }

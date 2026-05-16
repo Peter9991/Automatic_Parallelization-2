@@ -440,7 +440,7 @@ footer em { color: var(--red); font-style: normal; }
   <div class="sec-title">Measure <em>Speedup</em> Live</div>
   <p style="color:var(--muted);font-size:13px;margin-bottom:24px;max-width:640px">
     Paste any code in the analyzer above, hit Analyze, then run the benchmark here.
-    The tool simulates sequential vs parallel execution time based on the loops detected and your chosen thread count.
+    The server measures sequential vs parallel run time with OpenMP (<code>omp_get_wtime</code>) on representative workloads per loop type.
   </p>
 
   <div class="speedup-card">
@@ -578,7 +578,7 @@ for (int i = 0; i &lt; n; i++)
 </footer>
 
 <script>
-// Analysis and benchmark logic run on the C++ server; HTML only renders results.
+// Analysis and benchmark run on the C++ server (OpenMP timing); HTML only renders results.
 const API = 'http://localhost:8080';
 
 // ── Example snippets ─────────────────────────────────────────────────────────
@@ -715,7 +715,14 @@ async function analyze() {
   btn.disabled = false;
 }
 
-// ── Benchmark: POST thread count → C++ server returns simulated timings ───────
+function formatMs(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  if (ms > 0 && ms < 0.01) return '<0.01 ms';
+  if (ms < 10) return ms.toFixed(2) + ' ms';
+  return ms.toFixed(1) + ' ms';
+}
+
+// ── Benchmark: POST thread count → C++ server measures real timings ───────────
 async function runBenchmark() {
   const btn = document.querySelector('.run-bench-btn');
   btn.textContent = '⏳ Running...';
@@ -743,14 +750,16 @@ async function runBenchmark() {
       const pillClass = !r.parallelizable ? 'pill-none' : sp >= 3 ? 'pill-great' : sp >= 1.5 ? 'pill-good' : 'pill-none';
       const barColor  = !r.parallelizable ? '#d6cdc0' : sp >= 3 ? 'var(--blue)' : 'var(--green)';
       const barWidth  = Math.round((sp / Math.max(maxSp, 1)) * 100);
-      const accLabel = r.parallelizable ? '✓ All results match' : '✓ Outputs match';
-      const accPill = `<span style="font-weight:600;color:var(--green)">${accLabel}</span>`;
+      const accLabel = r.accurate
+        ? (r.parallelizable ? '✓ All results match' : '✓ Outputs match')
+        : '✗ Results differ';
+      const accPill = `<span style="font-weight:600;color:${r.accurate ? 'var(--green)' : 'var(--red)'}">${accLabel}</span>`;
 
       return `<tr>
         <td><strong>${r.label}</strong><br>
             <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${r.desc}</span></td>
-        <td>${r.seqMs.toFixed(1)} ms</td>
-        <td>${r.parMs.toFixed(1)} ms</td>
+        <td>${formatMs(r.seqMs)}</td>
+        <td>${formatMs(r.parMs)}</td>
         <td>
           <div class="bar-wrap">
             <span class="pill ${pillClass}">${spText}</span>
@@ -765,8 +774,8 @@ async function runBenchmark() {
     }).join('');
 
     document.getElementById('bsum-threads').textContent  = data.threads;
-    document.getElementById('bsum-seq').textContent      = data.totalSeq.toFixed(1) + ' ms';
-    document.getElementById('bsum-par').textContent      = data.totalPar.toFixed(1) + ' ms';
+    document.getElementById('bsum-seq').textContent      = formatMs(data.totalSeq);
+    document.getElementById('bsum-par').textContent      = formatMs(data.totalPar);
     document.getElementById('bsum-speedup').textContent  = data.avgSpeedup.toFixed(2) + '×';
 
     document.getElementById('benchEmpty').style.display   = 'none';
