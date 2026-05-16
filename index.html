@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AutoParallel — CSCI465/ECEN433</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+:root {
+  --cream:   #f5f0e8;
+  --cream2:  #ede7d9;
+  --cream3:  #e4ddd0;
+  --white:   #faf8f4;
+  --red:     #c0392b;
+  --red-l:   #f0dbd9;
+  --brown:   #5c4033;
+  --text:    #2c2418;
+  --muted:   #7a6a58;
+  --border:  #d6cdc0;
+  --green:   #2e7d52;
+  --green-l: #d4ead9;
+  --amber:   #b5620a;
+  --amber-l: #f0e2cc;
+  --blue:    #1a4d7a;
+  --blue-l:  #d0e2f0;
+  --serif:   'Playfair Display', Georgia, serif;
+  --sans:    'DM Sans', system-ui, sans-serif;
+  --mono:    'DM Mono', monospace;
+}
+
+body {
+  background: var(--cream);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* HEADER */
+header {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  position: sticky; top: 0; z-index: 100;
+}
+.header-inner {
+  max-width: 1100px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 58px;
+}
+.header-logo { font-family: var(--serif); font-size: 20px; }
+.header-logo em { color: var(--red); }
+.header-badge {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--red); border: 1px solid var(--red-l);
+  background: var(--red-l); padding: 4px 13px; border-radius: 99px;
+}
+
+/* HERO */
+.hero {
+  text-align: center;
+  padding: 64px 2rem 48px;
+  background: linear-gradient(180deg, var(--white) 0%, var(--cream) 100%);
+  border-bottom: 1px solid var(--border);
+}
+.hero-eyebrow {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--red); letter-spacing: .12em;
+  text-transform: uppercase; margin-bottom: 18px;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.hero-eyebrow::before, .hero-eyebrow::after { content: '·'; }
+.hero h1 {
+  font-family: var(--serif); font-size: 58px;
+  line-height: 1.1; margin-bottom: 16px;
+}
+.hero h1 em { color: var(--red); font-style: italic; }
+.hero-sub {
+  font-size: 16px; color: var(--muted);
+  max-width: 500px; margin: 0 auto;
+}
+.hero-sub code {
+  font-family: var(--mono); font-size: 13px;
+  background: var(--cream2); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 4px; color: var(--green);
+}
+
+/* TEAM */
+.team-section {
+  padding: 28px 2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--white);
+}
+.team-inner { max-width: 1100px; margin: 0 auto; text-align: center; }
+.team-label {
+  font-family: var(--mono); font-size: 10px;
+  color: var(--muted); letter-spacing: .15em;
+  text-transform: uppercase; margin-bottom: 16px;
+}
+.team-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.chip {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--cream); border: 1px solid var(--border);
+  border-radius: 99px; padding: 6px 16px 6px 6px;
+}
+.chip-av {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; font-family: var(--mono); color: #fff;
+}
+.av0{background:#c0392b} .av1{background:#1a6b4a} .av2{background:#1a4d7a} .av3{background:#7b3f00} .av4{background:#5b2d8e}
+.chip-name { font-size: 13px; font-weight: 600; }
+.chip-id   { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* MAIN */
+.content { max-width: 1100px; margin: 0 auto; padding: 56px 2rem; }
+
+.sec-label {
+  font-family: var(--mono); font-size: 10px;
+  color: var(--muted); letter-spacing: .15em;
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.sec-title {
+  font-family: var(--serif); font-size: 30px; margin-bottom: 24px;
+}
+.sec-title em { color: var(--red); font-style: italic; }
+.divider { height: 1px; background: var(--border); margin: 52px 0; }
+
+/* TOOL */
+.tool-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,.06);
+}
+.tool-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; background: var(--cream2);
+  border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px;
+}
+.tool-name { font-family: var(--serif); font-size: 17px; }
+.ex-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ex-btn {
+  font-family: var(--mono); font-size: 11px;
+  padding: 5px 13px; border-radius: 8px;
+  background: var(--white); color: var(--muted);
+  border: 1px solid var(--border); cursor: pointer; transition: all .15s;
+}
+.ex-btn:hover { background: var(--cream); color: var(--text); border-color: var(--brown); }
+.analyze-btn {
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  padding: 7px 20px; border-radius: 9px;
+  background: var(--red); color: #fff; border: none; cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.analyze-btn:hover { background: #a93226; transform: translateY(-1px); }
+
+.panels { display: grid; grid-template-columns: 1fr 1fr; min-height: 360px; }
+.panel { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.panel:last-child { border-right: none; }
+.panel-hdr {
+  padding: 8px 14px; background: var(--cream); border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  letter-spacing: .1em; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+}
+textarea {
+  flex: 1; resize: none; border: none; outline: none;
+  background: var(--white); color: var(--text);
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.7;
+  padding: 14px; tab-size: 2;
+}
+.output-pane {
+  flex: 1; overflow-y: auto; background: var(--white);
+  padding: 14px; font-family: var(--mono); font-size: 12.5px;
+  line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+  color: var(--text); min-height: 280px;
+}
+.output-pane.empty {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--sans); color: var(--muted); font-size: 13px;
+}
+.out-pragma  { color: var(--green); font-weight: 500; }
+.out-blocked { color: var(--amber); }
+.out-ok      { color: #bbb; }
+
+.copy-btn {
+  font-family: var(--mono); font-size: 10px; padding: 3px 9px;
+  border-radius: 5px; background: var(--cream); color: var(--muted);
+  border: 1px solid var(--border); cursor: pointer;
+}
+.copy-btn:hover { color: var(--text); }
+
+.stats-bar { display: flex; border-top: 1px solid var(--border); background: var(--cream2); }
+.stat-cell {
+  flex: 1; text-align: center; padding: 12px 8px;
+  border-right: 1px solid var(--border);
+}
+.stat-cell:last-child { border-right: none; }
+.stat-val { font-family: var(--serif); font-size: 22px; color: var(--red); }
+.stat-lbl { font-family: var(--mono); font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+
+.report { border-top: 1px solid var(--border); padding: 14px 16px; display: none; }
+.report-lbl {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .12em; margin-bottom: 10px;
+}
+.r-item { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
+.rtag { font-family: var(--mono); font-size: 9px; font-weight: 600; padding: 2px 9px; border-radius: 99px; white-space: nowrap; margin-top: 2px; }
+.rtag.safe    { background: var(--green-l); color: var(--green); }
+.rtag.reduce  { background: var(--amber-l); color: var(--amber); }
+.rtag.blocked { background: var(--red-l);   color: var(--red); }
+
+/* SPEEDUP TABLE */
+.speedup-card {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.06);
+}
+.speedup-hdr {
+  padding: 16px 20px; background: var(--cream2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.speedup-title { font-family: var(--serif); font-size: 17px; }
+.speedup-note  { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.sp-table { width: 100%; border-collapse: collapse; }
+.sp-table th {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 10px 16px; text-align: left;
+  border-bottom: 1px solid var(--border); background: var(--cream);
+}
+.sp-table th:not(:first-child) { text-align: right; }
+.sp-table td { padding: 11px 16px; border-bottom: 1px solid var(--cream2); font-size: 13px; }
+.sp-table td:not(:first-child) { text-align: right; font-family: var(--mono); font-size: 12px; }
+.sp-table tr:last-child td { border-bottom: none; }
+.sp-table tr:hover td { background: var(--cream); }
+.sp-table tr.total-row td { font-weight: 600; background: var(--cream2); border-top: 1px solid var(--border); border-bottom: none; }
+.pill {
+  display: inline-block; padding: 2px 10px; border-radius: 99px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+}
+.pill-good  { background: var(--green-l); color: var(--green); }
+.pill-great { background: var(--blue-l);  color: var(--blue); }
+.pill-none  { background: var(--cream2);  color: var(--muted); }
+.st-par { color: var(--green); font-size: 11px; }
+.st-blk { color: var(--amber); font-size: 11px; }
+
+/* Thread selector buttons */
+.thread-btn {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  padding: 5px 13px; border-radius: 7px;
+  background: var(--white); color: var(--muted);
+  border: 1px solid var(--border); cursor: pointer; transition: all .15s;
+}
+.thread-btn:hover { border-color: var(--brown); color: var(--text); }
+.thread-btn.active {
+  background: var(--text); color: var(--white);
+  border-color: var(--text);
+}
+
+/* Run benchmark button */
+.run-bench-btn {
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  padding: 7px 20px; border-radius: 9px;
+  background: var(--green); color: #fff; border: none; cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.run-bench-btn:hover { background: #1f5c3a; transform: translateY(-1px); }
+.run-bench-btn:active { transform: none; }
+
+/* Benchmark summary bar */
+.bsum-cell {
+  flex: 1; text-align: center; padding: 12px 8px;
+  border-right: 1px solid var(--border);
+}
+.bsum-cell:last-child { border-right: none; }
+.bsum-val { font-family: var(--serif); font-size: 20px; color: var(--red); }
+.bsum-lbl { font-family: var(--mono); font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+
+/* Bar chart for speedup visualization */
+.bar-wrap { display:flex; align-items:center; gap:8px; }
+.bar-bg { flex:1; height:8px; background:var(--cream2); border-radius:99px; overflow:hidden; max-width:80px; }
+.bar-fill { height:100%; border-radius:99px; transition: width .4s ease; }
+
+/* PIPELINE */
+.pipeline {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+}
+.pipe-step { background: var(--white); padding: 22px 18px; }
+.pipe-num  { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+.pipe-icon { font-size: 20px; margin-bottom: 10px; }
+.pipe-name { font-weight: 600; font-size: 14px; margin-bottom: 5px; }
+.pipe-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.pipe-desc code { font-family: var(--mono); font-size: 11px; }
+
+/* PATTERN CARDS */
+.pattern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pcard {
+  background: var(--white); border: 1px solid var(--border);
+  border-top: 3px solid var(--border);
+  border-radius: 12px; padding: 20px;
+}
+.pcard.safe    { border-top-color: var(--green); }
+.pcard.blocked { border-top-color: var(--red); }
+.pcard.reduce  { border-top-color: var(--amber); }
+.pcard.info    { border-top-color: var(--blue); }
+.pcard-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.pcard-desc  { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 12px; }
+.pcard-code  {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.75;
+  background: var(--cream); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; color: var(--muted);
+}
+.pcard-code .pragma { color: var(--green); font-weight: 500; }
+.pcard-code .warn   { color: var(--amber); }
+
+/* FOOTER */
+footer {
+  border-top: 1px solid var(--border); padding: 24px 2rem;
+  text-align: center; font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+footer em { color: var(--red); font-style: normal; }
+
+@media (max-width: 800px) {
+  .hero h1 { font-size: 36px; }
+  .panels  { grid-template-columns: 1fr; }
+  .pattern-grid { grid-template-columns: 1fr; }
+  .pipeline { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-inner">
+    <div class="header-logo">Auto<em>Parallel</em></div>
+    <div class="header-badge">· CSCI465 / ECEN433</div>
+  </div>
+</header>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">CSCI465: Introduction to Parallel Computing</div>
+  <h1>Auto <em>Parallelization</em></h1>
+  <p class="hero-sub">
+    A static analysis tool that transforms sequential C++ into
+    <code style="font-family:var(--mono);font-size:13px;background:var(--cream2);border:1px solid var(--border);padding:2px 8px;border-radius:5px;color:var(--green);white-space:nowrap">#pragma omp parallel for</code> code automatically.
+  </p>
+</div>
+
+<!-- TEAM -->
+<div class="team-section">
+  <div class="team-inner">
+    <div class="team-label">Project Team · Team 1</div>
+    <div class="team-chips">
+      <div class="chip">
+        <div class="chip-av av0">PY</div>
+        <div><div class="chip-name">Peter Yakoub Younan</div><div class="chip-id">221000217</div></div>
+      </div>
+      <div class="chip">
+        <div class="chip-av av1">SU</div>
+        <div><div class="chip-name">Sotir Usama Latif</div><div class="chip-id">221000694</div></div>
+      </div>
+      <div class="chip">
+        <div class="chip-av av2">OM</div>
+        <div><div class="chip-name">Omar Mohamed Sawan</div><div class="chip-id">221000756</div></div>
+      </div>
+      <div class="chip">
+        <div class="chip-av av3">OA</div>
+        <div><div class="chip-name">Omar Alaa Hassan</div><div class="chip-id">202002417</div></div>
+      </div>
+      <div class="chip">
+        <div class="chip-av av4">SM</div>
+        <div><div class="chip-name">Sondos Mohamed</div><div class="chip-id">202002250</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="content">
+
+  <!-- 01 · ANALYZER -->
+  <div class="sec-label">01 · Analyzer</div>
+  <div class="sec-title">Paste your C++ code, get <em>parallel</em> code</div>
+
+  <div class="tool-card">
+    <div class="tool-topbar">
+      <div class="tool-name">AutoParallel — Static Analyzer</div>
+      <div class="ex-row">
+        <button class="ex-btn" onclick="loadEx(1)">matrix mul</button>
+        <button class="ex-btn" onclick="loadEx(2)">reduction</button>
+        <button class="ex-btn" onclick="loadEx(3)">dependency</button>
+        <button class="ex-btn" onclick="loadEx(4)">merge sort</button>
+        <button class="analyze-btn" onclick="analyze()">▶ Analyze</button>
+      </div>
+    </div>
+
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-hdr">Sequential C/C++ input</div>
+        <textarea id="inputCode" spellcheck="false" placeholder="// Paste sequential C/C++ code here
+// or pick an example above ↑"></textarea>
+      </div>
+      <div class="panel">
+        <div class="panel-hdr">
+          OpenMP output
+          <button class="copy-btn" onclick="copyOut()">⎘ copy</button>
+        </div>
+        <div class="output-pane empty" id="outputPane">Output appears here after analysis</div>
+      </div>
+    </div>
+
+    <div class="stats-bar" id="statsBar" style="display:none">
+      <div class="stat-cell"><div class="stat-val" id="st-loops">0</div><div class="stat-lbl">Loops Found</div></div>
+      <div class="stat-cell"><div class="stat-val" id="st-par">0</div><div class="stat-lbl">Parallelized</div></div>
+      <div class="stat-cell"><div class="stat-val" id="st-red">0</div><div class="stat-lbl">Reductions</div></div>
+      <div class="stat-cell"><div class="stat-val" id="st-dep">0</div><div class="stat-lbl">Blocked</div></div>
+    </div>
+
+    <div class="report" id="reportEl">
+      <div class="report-lbl">Dependency Report</div>
+      <div id="reportItems"></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 02 · SPEEDUP -->
+  <div class="sec-label">02 · Benchmark</div>
+  <div class="sec-title">Measure <em>Speedup</em> Live</div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:24px;max-width:640px">
+    Paste any code in the analyzer above, hit Analyze, then run the benchmark here.
+    The tool simulates sequential vs parallel execution time based on the loops detected and your chosen thread count.
+  </p>
+
+  <div class="speedup-card">
+    <div class="speedup-hdr">
+      <div class="speedup-title">Sequential vs Parallel Benchmark</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <!-- Thread selector -->
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Threads:</span>
+          <div id="threadBtns" style="display:flex;gap:4px">
+            <button class="thread-btn active" onclick="setThreads(1,this)">1</button>
+            <button class="thread-btn" onclick="setThreads(2,this)">2</button>
+            <button class="thread-btn" onclick="setThreads(4,this)">4</button>
+            <button class="thread-btn" onclick="setThreads(8,this)">8</button>
+          </div>
+        </div>
+        <button class="run-bench-btn" onclick="runBenchmark()">▶ Run Benchmark</button>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="benchEmpty" style="padding:40px;text-align:center;color:var(--muted);font-family:var(--sans);font-size:13px">
+      Run the analyzer first, then click <strong>Run Benchmark</strong> to see live results.
+    </div>
+
+    <!-- Results table (hidden until run) -->
+    <div id="benchResults" style="display:none">
+      <table class="sp-table">
+        <thead>
+          <tr>
+            <th>Loop</th>
+            <th>Seq time</th>
+            <th>Par time</th>
+            <th>Speedup</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="benchBody"></tbody>
+      </table>
+      <!-- Summary bar -->
+      <div id="benchSummary" style="display:flex;border-top:1px solid var(--border);background:var(--cream2)">
+        <div class="bsum-cell"><div class="bsum-val" id="bsum-threads">—</div><div class="bsum-lbl">Threads</div></div>
+        <div class="bsum-cell"><div class="bsum-val" id="bsum-seq">—</div><div class="bsum-lbl">Total Seq</div></div>
+        <div class="bsum-cell"><div class="bsum-val" id="bsum-par">—</div><div class="bsum-lbl">Total Par</div></div>
+        <div class="bsum-cell"><div class="bsum-val" id="bsum-speedup" style="color:var(--green)">—</div><div class="bsum-lbl">Avg Speedup</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 03 · PIPELINE -->
+  <div class="sec-label">03 · How it works</div>
+  <div class="sec-title">The <em>analysis</em> pipeline</div>
+
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-num">01</div>
+      <div class="pipe-icon">📄</div>
+      <div class="pipe-name">Parse Source</div>
+      <div class="pipe-desc">Reads C++ line-by-line, identifies <code>for</code> loop headers and extracts the loop variable, bounds, and step.</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">02</div>
+      <div class="pipe-icon">🔍</div>
+      <div class="pipe-name">Dependency Analysis</div>
+      <div class="pipe-desc">Scans the loop body for <code style="color:var(--red)">arr[i±k]</code> on the RHS of assignments — these are loop-carried dependencies that block parallelization.</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">03</div>
+      <div class="pipe-icon">⚙️</div>
+      <div class="pipe-name">Pattern Detection</div>
+      <div class="pipe-desc">Detects reductions (<code>+=</code>, <code>max</code>), private scalar variables declared inside the body, and nested loop structures.</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">04</div>
+      <div class="pipe-icon">⚡</div>
+      <div class="pipe-name">Pragma Injection</div>
+      <div class="pipe-desc">Builds the correct <code style="color:var(--green)">#pragma omp parallel for</code> with <code>reduction()</code>, <code>private()</code>, and <code>schedule()</code> clauses.</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 04 · PATTERNS -->
+  <div class="sec-label">04 · Detection rules</div>
+  <div class="sec-title">What gets <em>detected</em></div>
+
+  <div class="pattern-grid">
+    <div class="pcard safe">
+      <div class="pcard-title">✓ Independent loop</div>
+      <div class="pcard-desc">Each iteration accesses only <code style="font-family:var(--mono);font-size:11px">arr[i]</code> with no cross-iteration data flow. Safe to distribute across threads.</div>
+      <div class="pcard-code"><span class="pragma">// [AutoParallel] PARALLELIZED
+#pragma omp parallel for schedule(static)</span>
+for (int i = 0; i &lt; n; i++)
+  b[i] = a[i] * 2 + 1;</div>
+    </div>
+    <div class="pcard blocked">
+      <div class="pcard-title">✗ Loop-carried dependency</div>
+      <div class="pcard-desc">The pattern <code style="font-family:var(--mono);font-size:11px;color:var(--red)">a[i-1]</code> on the RHS means iteration <em>i</em> depends on <em>i−1</em>. Cannot parallelize.</div>
+      <div class="pcard-code"><span class="warn">// [AutoParallel] BLOCKED
+// loop-carried dep: a[i-1]</span>
+for (int i = 1; i &lt; n; i++)
+  a[i] = <span class="warn">a[i-1]</span> + b[i];</div>
+    </div>
+    <div class="pcard reduce">
+      <div class="pcard-title">Σ Reduction pattern</div>
+      <div class="pcard-desc">Detects <code style="font-family:var(--mono);font-size:11px">+=</code>, <code style="font-family:var(--mono);font-size:11px">*=</code>, and <code style="font-family:var(--mono);font-size:11px">max/min</code> accumulators. OpenMP handles thread-local copies automatically.</div>
+      <div class="pcard-code"><span class="pragma">// [AutoParallel] PARALLELIZED + reduction
+#pragma omp parallel for \
+  reduction(+:sum) reduction(max:maxVal)</span>
+for (int i = 0; i &lt; n; i++) {
+  sum += arr[i];
+  if (arr[i] &gt; maxVal) maxVal = arr[i];
+}</div>
+    </div>
+    <div class="pcard info">
+      <div class="pcard-title">⊞ Nested loops</div>
+      <div class="pcard-desc">An inner <code style="font-family:var(--mono);font-size:11px">for</code> inside the body triggers <code style="font-family:var(--mono);font-size:11px">schedule(dynamic)</code> and a <code style="font-family:var(--mono);font-size:11px">collapse(2)</code> hint for further optimization.</div>
+      <div class="pcard-code"><span class="pragma">// [AutoParallel] PARALLELIZED (nested)
+#pragma omp parallel for schedule(dynamic)
+/* consider: collapse(2) */</span>
+for (int i = 0; i &lt; n; i++)
+  for (int j = 0; j &lt; n; j++)
+    C[i][j] = dot(A[i], B[j]);</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  Built for <em>CSCI465</em> · Introduction to Parallel Computing · Nile University · Spring 2026
+</footer>
+
+<script>
+// ── All analysis and benchmark logic runs in the C++ server ──────────────────
+// This file only handles UI: sending code, receiving JSON, rendering results.
+const API = 'http://localhost:8080';
+
+// ── Example snippets ─────────────────────────────────────────────────────────
+const EXAMPLES = {
+  1:`// Matrix multiplication
+void matmul(float A[][N], float B[][N], float C[][N], int n) {
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            float sum = 0.0f;
+            for (int k = 0; k < n; k++) {
+                sum += A[i][k] * B[k][j];
+            }
+            C[i][j] = sum;
+        }
+    }
+}`,
+  2:`// Array reduction
+int main() {
+    double arr[10000];
+    double sum = 0.0;
+    double maxVal = arr[0];
+
+    for (int i = 0; i < 10000; i++) {
+        sum += arr[i];
+    }
+    for (int i = 1; i < 10000; i++) {
+        if (arr[i] > maxVal) maxVal = arr[i];
+    }
+    return 0;
+}`,
+  3:`// Mixed loops
+void process(int* a, int* b, int n) {
+    // Independent — safe
+    for (int i = 0; i < n; i++) {
+        b[i] = a[i] * 2 + 1;
+    }
+    // Loop-carried dependency — blocked
+    for (int i = 1; i < n; i++) {
+        a[i] = a[i-1] + b[i];
+    }
+    // Independent again
+    for (int i = 0; i < n; i++) {
+        b[i] = b[i] * b[i];
+    }
+}`,
+  4:`// Merge Sort — parallel merge phase
+void merge(int* arr, int l, int m, int r) {
+    int n1 = m - l + 1, n2 = r - m;
+    int L[n1], R[n2];
+    for (int i = 0; i < n1; i++)
+        L[i] = arr[l + i];
+    for (int j = 0; j < n2; j++)
+        R[j] = arr[m + 1 + j];
+    int i = 0, j = 0, k = l;
+    for (int k = l; k <= r && i < n1 && j < n2; k++) {
+        if (L[i] <= R[j]) arr[k] = L[i++];
+        else               arr[k] = R[j++];
+    }
+}`
+};
+
+function loadEx(n) {
+  document.getElementById('inputCode').value = EXAMPLES[n];
+}
+
+// ── Thread selector ───────────────────────────────────────────────────────────
+let currentThreads = 1;
+function setThreads(n, btn) {
+  currentThreads = n;
+  document.querySelectorAll('.thread-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── Analyze: POST code to C++ server, render response ────────────────────────
+async function analyze() {
+  const code = document.getElementById('inputCode').value.trim();
+  if (!code) return;
+
+  const btn = document.querySelector('.analyze-btn');
+  btn.textContent = '⏳ Analyzing...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(API + '/analyze', {
+      method: 'POST',
+      body: code,
+      headers: { 'Content-Type': 'text/plain' }
+    });
+    const data = await res.json();
+
+    // Render annotated code
+    const pane = document.getElementById('outputPane');
+    pane.className = 'output-pane';
+    pane.innerHTML = data.code;
+
+    // Stats bar
+    document.getElementById('statsBar').style.display = 'flex';
+    document.getElementById('st-loops').textContent = data.total;
+    document.getElementById('st-par').textContent   = data.parallelized;
+    document.getElementById('st-red').textContent   = data.reductions;
+    document.getElementById('st-dep').textContent   = data.blocked;
+
+    // Dependency report
+    if (data.loops && data.loops.length > 0) {
+      document.getElementById('reportEl').style.display = 'block';
+      document.getElementById('reportItems').innerHTML = data.loops.map(l => {
+        const tag  = l.parallelized ? (l.hasReduction ? 'reduce' : 'safe') : 'blocked';
+        const lbl  = tag === 'safe' ? 'PARALLEL' : tag === 'reduce' ? 'REDUCTION' : 'BLOCKED';
+        const desc = l.parallelized
+          ? (l.hasReduction
+              ? `Parallelized with ${l.reductions.join(', ')}.`
+              : `No dependencies — safe to parallelize.`)
+          : `Loop-carried dependency: ${l.blockReason}`;
+        const range = l.init ? ` (${l.var}: ${l.init}→${l.limit})` : ` (${l.var})`;
+        return `<div class="r-item">
+          <span class="rtag ${tag}">${lbl}</span>
+          <span><strong>Loop at line ${l.line}${range}</strong> — ${desc}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Reset benchmark section
+    document.getElementById('benchEmpty').style.display = 'block';
+    document.getElementById('benchResults').style.display = 'none';
+    document.getElementById('benchEmpty').textContent =
+      'Code analyzed! Click ▶ Run Benchmark below to measure real speedup.';
+
+  } catch(e) {
+    const pane = document.getElementById('outputPane');
+    pane.className = 'output-pane';
+    pane.innerHTML = `<span style="color:var(--red)">⚠ Could not reach C++ server at ${API}\n\nMake sure the server is running:\n  g++ -O2 -fopenmp -std=c++17 -o server server.cpp -lmicrohttpd\n  ./server</span>`;
+  }
+
+  btn.textContent = '▶ Analyze';
+  btn.disabled = false;
+}
+
+// ── Benchmark: POST thread count to C++ server, render real timings ───────────
+async function runBenchmark() {
+  const btn = document.querySelector('.run-bench-btn');
+  btn.textContent = '⏳ Running...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(API + '/benchmark', {
+      method: 'POST',
+      body: String(currentThreads),
+      headers: { 'Content-Type': 'text/plain' }
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error || 'Run Analyze first.');
+      btn.textContent = '▶ Run Benchmark';
+      btn.disabled = false;
+      return;
+    }
+
+    const data = await res.json();
+
+    // Render rows
+    const maxSp = Math.max(...data.rows.map(r => r.speedup));
+    document.getElementById('benchBody').innerHTML = data.rows.map(r => {
+      const sp = r.speedup;
+      const pillClass = !r.parallelizable ? 'pill-none' : sp >= 3 ? 'pill-great' : sp >= 1.5 ? 'pill-good' : 'pill-none';
+      const barColor  = !r.parallelizable ? '#d6cdc0' : sp >= 3 ? 'var(--blue)' : 'var(--green)';
+      const barWidth  = Math.round((sp / Math.max(maxSp, 1)) * 100);
+      return `<tr>
+        <td><strong>${r.label}</strong><br>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${r.desc}</span></td>
+        <td>${r.seqMs.toFixed(1)} ms</td>
+        <td>${r.parMs.toFixed(1)} ms</td>
+        <td>
+          <div class="bar-wrap">
+            <span class="pill ${pillClass}">${sp.toFixed(2)}×</span>
+            <div class="bar-bg"><div class="bar-fill" style="width:${barWidth}%;background:${barColor}"></div></div>
+          </div>
+        </td>
+        <td><span class="${r.parallelizable ? 'st-par' : 'st-blk'}">
+          ${r.parallelizable ? '✓ parallelized' : '✗ blocked'}
+        </span></td>
+      </tr>`;
+    }).join('');
+
+    // Summary
+    document.getElementById('bsum-threads').textContent  = data.threads;
+    document.getElementById('bsum-seq').textContent      = data.totalSeq.toFixed(1) + ' ms';
+    document.getElementById('bsum-par').textContent      = data.totalPar.toFixed(1) + ' ms';
+    document.getElementById('bsum-speedup').textContent  = data.avgSpeedup.toFixed(2) + '×';
+
+    document.getElementById('benchEmpty').style.display   = 'none';
+    document.getElementById('benchResults').style.display = 'block';
+
+  } catch(e) {
+    alert('Could not reach C++ server. Make sure ./server is running.');
+  }
+
+  btn.textContent = '▶ Run Benchmark';
+  btn.disabled = false;
+}
+
+// ── Copy output ───────────────────────────────────────────────────────────────
+function copyOut() {
+  navigator.clipboard.writeText(
+    document.getElementById('outputPane').innerText
+  ).catch(() => {});
+}
+</script>
+</body>
+</html>

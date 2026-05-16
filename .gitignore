@@ -1,0 +1,15 @@
+# Build artifacts
+server
+server.exe
+*.o
+*.obj
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Scratch files
+New Text Document.txt
