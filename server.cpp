@@ -324,16 +324,38 @@ struct BenchRow {
     bool   accurate;
 };
 
-// Warm up, run several times, return the median elapsed time in milliseconds.
+// Prevent the optimizer from dropping benchmark side effects.
+static volatile double g_bench_sink = 0;
+
+// Warm up, adapt inner iterations so each sample is measurable, return median ms per call.
 static double bench_ms(const function<void()>& fn) {
-    constexpr int WARMUP = 2;
-    constexpr int REPS   = 7;
+    constexpr int WARMUP     = 2;
+    constexpr int REPS       = 7;
+    constexpr double TARGET_MS = 8.0;
+    constexpr int ITERS_MAX  = 2000;
+
     for (int w = 0; w < WARMUP; w++) fn();
+
+    int iters = 1;
+    for (int probe = 0; probe < 12 && iters < ITERS_MAX; probe++) {
+        double t0 = omp_get_wtime();
+        for (int k = 0; k < iters; k++) fn();
+        double elapsed_ms = (omp_get_wtime() - t0) * 1000.0;
+        if (elapsed_ms >= TARGET_MS * 0.5) break;
+        if (elapsed_ms < 0.001)
+            iters = min(iters * 10, ITERS_MAX);
+        else {
+            int need = (int)ceil(TARGET_MS / (elapsed_ms / iters));
+            iters = min(max(iters, need), ITERS_MAX);
+            break;
+        }
+    }
+
     double times[REPS];
     for (int i = 0; i < REPS; i++) {
         double t0 = omp_get_wtime();
-        fn();
-        times[i] = (omp_get_wtime() - t0) * 1000.0;
+        for (int k = 0; k < iters; k++) fn();
+        times[i] = (omp_get_wtime() - t0) * 1000.0 / iters;
     }
     sort(times, times + REPS);
     return times[REPS / 2];
@@ -438,6 +460,7 @@ static vector<BenchRow> run_benchmark(const vector<LoopInfo>& loops, int threads
             row.seq_ms = bench_ms([&] {
                 if (want_sum) { sum_seq = 0; for (int i = 0; i < M; i++) sum_seq += arr[i]; }
                 if (want_max) { mx_seq = arr[0]; for (int i = 0; i < M; i++) if (arr[i] > mx_seq) mx_seq = arr[i]; }
+                g_bench_sink += sum_seq + mx_seq;
             });
 
             double sum_par = 0, mx_par = arr[0];
@@ -449,18 +472,21 @@ static vector<BenchRow> run_benchmark(const vector<LoopInfo>& loops, int threads
                         sum_par += arr[i];
                         if (arr[i] > mx_par) mx_par = arr[i];
                     }
+                    g_bench_sink += sum_par + mx_par;
                 });
             } else if (want_sum) {
                 row.par_ms = bench_ms([&] {
                     sum_par = 0;
                     #pragma omp parallel for reduction(+:sum_par)
                     for (int i = 0; i < M; i++) sum_par += arr[i];
+                    g_bench_sink += sum_par;
                 });
             } else {
                 row.par_ms = bench_ms([&] {
                     mx_par = arr[0];
                     #pragma omp parallel for reduction(max:mx_par)
                     for (int i = 0; i < M; i++) if (arr[i] > mx_par) mx_par = arr[i];
+                    g_bench_sink += mx_par;
                 });
             }
 
