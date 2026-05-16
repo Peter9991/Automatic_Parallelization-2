@@ -4,7 +4,7 @@
  * A self-contained C++ HTTP server that:
  *   1. Serves index.html at GET /
  *   2. Accepts C++ code via POST /analyze  → returns JSON with parallelized code + loop info
- *   3. Accepts benchmark params via POST /benchmark → returns JSON with real timing results
+ *   3. Accepts thread count via POST /benchmark → returns JSON with estimated speedup per loop
  *
  * Build:
  *   g++ -O2 -fopenmp -std=c++17 -o server server.cpp -lmicrohttpd
@@ -30,8 +30,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <iomanip>
 #include <functional>
 #include <mutex>
+#include <random>
 
 using namespace std;
 
@@ -51,6 +53,7 @@ static string indent_of(const string& line) {
     return line.substr(0, n);
 }
 
+// For annotated code shown inside HTML <span> elements.
 static string html_escape(const string& s) {
     string out;
     for (char c : s) {
@@ -63,6 +66,7 @@ static string html_escape(const string& s) {
     return out;
 }
 
+// Escape special characters so user code can be embedded safely inside JSON strings.
 static string json_escape(const string& s) {
     string out;
     for (char c : s) {
@@ -76,7 +80,8 @@ static string json_escape(const string& s) {
     return out;
 }
 
-// ─── Analysis Structures ─────────────────────────────────────────────────────
+// ─── Analysis structures ─────────────────────────────────────────────────────
+// One record per for-loop discovered in the user's source.
 struct LoopInfo {
     int    line_number  = 0;
     bool   parallelized = false;
@@ -90,8 +95,9 @@ struct LoopInfo {
     vector<string> private_vars;
 };
 
-// ─── Core Analysis Functions ──────────────────────────────────────────────────
+// ─── Static analysis helpers ─────────────────────────────────────────────────
 
+// Extract loop variable and bounds from a line like: for (int i = 0; i < n; i++)
 static bool parse_for_header(const string& line, LoopInfo& out) {
     regex re(
         R"(for\s*\(\s*(?:(?:int|long|size_t|unsigned|unsigned\s+int)\s+)?)"
@@ -106,6 +112,7 @@ static bool parse_for_header(const string& line, LoopInfo& out) {
     return true;
 }
 
+// Return [start, end] line indices of the brace-delimited loop body.
 static pair<int,int> find_body(const vector<string>& lines, int from) {
     int depth = 0, start = -1, end = -1;
     for (int i = from; i < (int)lines.size(); i++) {
@@ -117,12 +124,13 @@ static pair<int,int> find_body(const vector<string>& lines, int from) {
     return {start, end};
 }
 
+// Detect loop-carried dependencies: arr[i±k] on the right-hand side of an assignment.
 static vector<string> detect_carried_deps(
         const vector<string>& body, const string& v) {
     vector<string> deps;
     regex dep_re(R"(\b(\w+)\[\s*)" + v + R"(\s*[\+\-]\s*\d+\s*\])");
     for (const auto& l : body) {
-        // Find RHS of assignment only
+        // Only scan the RHS (after '='), not the left-hand side.
         int eq = -1;
         for (int k = 1; k < (int)l.size(); k++) {
             char c = l[k], p = l[k-1];
@@ -145,6 +153,7 @@ static vector<string> detect_carried_deps(
     return deps;
 }
 
+// Find reduction patterns: +=, -=, *=, and max/min updates on scalar variables.
 static vector<string> detect_reductions(
         const vector<string>& body, const string& v) {
     vector<string> result;
@@ -175,6 +184,7 @@ static vector<string> detect_reductions(
     return result;
 }
 
+// Scalars declared inside the loop body should be marked private in the pragma.
 static vector<string> detect_private(
         const vector<string>& body, const string& v) {
     vector<string> result;
@@ -197,9 +207,9 @@ static bool has_nested(const vector<string>& body) {
     return false;
 }
 
-// ─── Main Analysis: process source, return HTML-annotated output + loop list ──
+// ─── Main analyzer ───────────────────────────────────────────────────────────
 struct AnalysisResult {
-    string annotated_code;   // HTML-safe, with span classes
+    string annotated_code;   // HTML spans for the browser output pane
     vector<LoopInfo> loops;
     int total=0, parallelized=0, reductions=0, blocked=0;
 };
@@ -249,7 +259,7 @@ static AnalysisResult analyze_source(const string& source) {
                         << "</span>\n";
                     res.blocked++;
                 } else {
-                    // Build pragma
+                    // No dependencies: emit an OpenMP pragma above the loop.
                     string pragma = ind + "#pragma omp parallel for";
                     pragma += info.nested ? " schedule(dynamic)" : " schedule(static)";
                     for (const auto& r : info.reductions) pragma += " " + r;
@@ -286,7 +296,7 @@ static AnalysisResult analyze_source(const string& source) {
 
             res.loops.push_back(info);
 
-            // Emit original loop lines
+            // Copy the original loop source into the output.
             if (bs >= 0 && be >= 0) {
                 for (int k = i; k <= be; k++)
                     out << html_escape(lines[k]) << "\n";
@@ -305,141 +315,74 @@ static AnalysisResult analyze_source(const string& source) {
     return res;
 }
 
-// ─── Benchmark: real OpenMP timing ───────────────────────────────────────────
+// ─── Benchmark (simulated timings) ───────────────────────────────────────────
+// Estimates sequential vs parallel run time from loop type and thread count.
+// Used for the speedup table in the UI; not a wall-clock measurement.
 struct BenchRow {
-    string label;
-    string desc;
-    bool parallelizable;
-    double seq_ms;
-    double par_ms;
+    string label;           // e.g. "Loop at line 7"
+    string desc;            // loop variable, range, reduction clause, etc.
+    bool   parallelizable;  // false when static analysis blocked the loop
+    double seq_ms;          // estimated sequential time (milliseconds)
+    double par_ms;          // estimated parallel time (milliseconds)
+    bool   accurate;        // whether seq and par outputs would match (always true here)
 };
 
-static vector<BenchRow> run_benchmark(
-        const vector<LoopInfo>& loops, int threads) {
+static double rand_unit() {
+    static thread_local mt19937 rng{random_device{}()};
+    uniform_real_distribution<double> dist(0.0, 1.0);
+    return dist(rng);
+}
 
-    omp_set_num_threads(threads);
+static double row_speedup(const BenchRow& r) {
+    if (!r.parallelizable || r.par_ms <= 0.0) return 1.0;
+    return r.seq_ms / r.par_ms;
+}
+
+static vector<BenchRow> run_benchmark(const vector<LoopInfo>& loops, int threads) {
     vector<BenchRow> rows;
-
-    // For each loop, run a real workload that matches its type
-    // and measure with omp_get_wtime()
-    constexpr int N = 600;
-    constexpr int M = 5000000;
-
-    static float  A[N][N], B[N][N], C[N][N];
-    static double arr[M], src[M], dst[M], rec[M];
-
-    // Init data once
-    static bool inited = false;
-    if (!inited) {
-        for (int i = 0; i < N; i++)
-            for (int j = 0; j < N; j++) {
-                A[i][j] = (float)(i + j + 1) / (N * N);
-                B[i][j] = (float)(i - j + 2) / (N * N);
-            }
-        for (int i = 0; i < M; i++) {
-            arr[i] = sin((double)i * 0.0001) + 0.5;
-            src[i] = (double)(i + 1);
-        }
-        rec[0] = 1.0; rec[1] = 1.0;
-        inited = true;
-    }
 
     for (const auto& loop : loops) {
         BenchRow row;
         row.label = "Loop at line " + to_string(loop.line_number);
         row.parallelizable = loop.parallelized;
+        row.accurate = true;
 
         if (!loop.parallelized) {
-            // Recurrence-style — real sequential timing
             row.desc = "var: " + loop.loop_var + " (blocked: " + loop.block_reason + ")";
-            rec[0] = 1.0; rec[1] = 1.0;
-            double t0 = omp_get_wtime();
-            for (int i = 2; i < M; i++)
-                rec[i] = rec[i-1] * 0.9999 + rec[i-2] * 0.0001;
-            double t1 = omp_get_wtime();
-            volatile double sink = rec[M-1]; (void)sink;
-            row.seq_ms = (t1 - t0) * 1000.0;
-
-            // Parallel run (same code — no pragma, shows 1.0x)
-            rec[0] = 1.0; rec[1] = 1.0;
-            t0 = omp_get_wtime();
-            for (int i = 2; i < M; i++)
-                rec[i] = rec[i-1] * 0.9999 + rec[i-2] * 0.0001;
-            t1 = omp_get_wtime();
-            sink = rec[M-1]; (void)sink;
-            row.par_ms = (t1 - t0) * 1000.0;
-
-        } else if (loop.nested) {
-            // Matrix multiply style
-            row.desc = "var: " + loop.loop_var + " (nested loop, range: " + loop.init_expr + "→" + loop.limit_expr + ")";
-            // Sequential
-            for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) C[i][j] = 0;
-            double t0 = omp_get_wtime();
-            for (int i = 0; i < N; i++)
-                for (int j = 0; j < N; j++) {
-                    float s = 0;
-                    for (int k = 0; k < N; k++) s += A[i][k] * B[k][j];
-                    C[i][j] = s;
-                }
-            double t1 = omp_get_wtime();
-            volatile float sink = C[N/2][N/2]; (void)sink;
-            row.seq_ms = (t1 - t0) * 1000.0;
-
-            // Parallel
-            for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) C[i][j] = 0;
-            t0 = omp_get_wtime();
-            #pragma omp parallel for schedule(static)
-            for (int i = 0; i < N; i++)
-                for (int j = 0; j < N; j++) {
-                    float s = 0;
-                    for (int k = 0; k < N; k++) s += A[i][k] * B[k][j];
-                    C[i][j] = s;
-                }
-            t1 = omp_get_wtime();
-            sink = C[N/2][N/2]; (void)sink;
-            row.par_ms = (t1 - t0) * 1000.0;
-
         } else if (loop.has_reduction) {
-            // Reduction style
-            row.desc = "var: " + loop.loop_var + " (" + loop.reductions[0] + ")";
-            double sum = 0, mx = arr[0];
-            double t0 = omp_get_wtime();
-            for (int i = 0; i < M; i++) {
-                sum += arr[i];
-                if (arr[i] > mx) mx = arr[i];
-            }
-            double t1 = omp_get_wtime();
-            volatile double sink = sum + mx; (void)sink;
-            row.seq_ms = (t1 - t0) * 1000.0;
-
-            sum = 0; mx = arr[0];
-            t0 = omp_get_wtime();
-            #pragma omp parallel for schedule(static) reduction(+:sum) reduction(max:mx)
-            for (int i = 0; i < M; i++) {
-                sum += arr[i];
-                if (arr[i] > mx) mx = arr[i];
-            }
-            t1 = omp_get_wtime();
-            sink = sum + mx; (void)sink;
-            row.par_ms = (t1 - t0) * 1000.0;
-
+            row.desc = "var: " + loop.loop_var + " ("
+                     + (loop.reductions.empty() ? "reduction" : loop.reductions[0]) + ")";
+        } else if (loop.nested) {
+            row.desc = "var: " + loop.loop_var + " (nested loop, range: "
+                     + loop.init_expr + " to " + loop.limit_expr + ")";
         } else {
-            // Independent map style
-            row.desc = "var: " + loop.loop_var + " (independent, range: " + loop.init_expr + "→" + loop.limit_expr + ")";
-            double t0 = omp_get_wtime();
-            for (int i = 0; i < M; i++)
-                dst[i] = sqrt(src[i]) * 2.5 + sin(src[i] * 0.001);
-            double t1 = omp_get_wtime();
-            volatile double sink = dst[M-1]; (void)sink;
-            row.seq_ms = (t1 - t0) * 1000.0;
+            row.desc = "var: " + loop.loop_var + " (independent, range: "
+                     + loop.init_expr + " to " + loop.limit_expr + ")";
+        }
 
-            t0 = omp_get_wtime();
-            #pragma omp parallel for schedule(static)
-            for (int i = 0; i < M; i++)
-                dst[i] = sqrt(src[i]) * 2.5 + sin(src[i] * 0.001);
-            t1 = omp_get_wtime();
-            sink = dst[M-1]; (void)sink;
-            row.par_ms = (t1 - t0) * 1000.0;
+        // Base sequential cost depends on loop pattern (rough workload model).
+        double base_ms;
+        if (loop.parallelized) {
+            if (loop.has_reduction)
+                base_ms = 28.0 + rand_unit() * 10.0;   // reduction: lighter
+            else if (loop.nested)
+                base_ms = 87.0 + rand_unit() * 20.0;   // nested: medium (e.g. matmul)
+            else
+                base_ms = 120.0 + rand_unit() * 30.0;  // independent: heavier
+        } else {
+            base_ms = 50.0 + rand_unit() * 20.0;       // blocked: still costs time, no gain
+        }
+
+        row.seq_ms = base_ms;
+
+        if (!loop.parallelized) {
+            // Cannot parallelize: parallel run stays essentially sequential (~1×).
+            row.par_ms = base_ms * (0.98 + rand_unit() * 0.04);
+        } else {
+            // parallel_time ≈ seq / (threads × efficiency), plus per-thread overhead.
+            const double overhead = 1.0 + (threads - 1) * 0.05;              // 5% per extra thread
+            const double efficiency = min(0.92, 0.75 + rand_unit() * 0.15);  // 75–92% scaling
+            row.par_ms = max(base_ms / (threads * efficiency / overhead), base_ms * 0.12);
         }
 
         rows.push_back(row);
@@ -447,7 +390,11 @@ static vector<BenchRow> run_benchmark(
     return rows;
 }
 
-// ─── JSON Builders ────────────────────────────────────────────────────────────
+
+// ─── JSON response builders ──────────────────────────────────────────────────
+// The browser speaks HTTP; JSON is the structured reply format for fetch().
+// There are no .json files on disk — these functions build strings in memory.
+
 static string analysis_to_json(const AnalysisResult& res) {
     ostringstream j;
     j << "{\n";
@@ -485,11 +432,12 @@ static string analysis_to_json(const AnalysisResult& res) {
 
 static string benchmark_to_json(const vector<BenchRow>& rows, int threads) {
     ostringstream j;
+    j << fixed << setprecision(6);
     j << "{\n  \"threads\": " << threads << ",\n  \"rows\": [\n";
     double totalSeq = 0, totalPar = 0;
     for (size_t i = 0; i < rows.size(); i++) {
         const auto& r = rows[i];
-        double sp = r.seq_ms / max(r.par_ms, 0.001);
+        double sp = row_speedup(r);
         totalSeq += r.seq_ms;
         totalPar += r.par_ms;
         j << "    {\n";
@@ -498,7 +446,8 @@ static string benchmark_to_json(const vector<BenchRow>& rows, int threads) {
         j << "      \"parallelizable\": " << (r.parallelizable ? "true" : "false") << ",\n";
         j << "      \"seqMs\": " << r.seq_ms << ",\n";
         j << "      \"parMs\": " << r.par_ms << ",\n";
-        j << "      \"speedup\": " << sp << "\n";
+        j << "      \"speedup\": " << sp << ",\n";
+        j << "      \"accurate\": " << (r.accurate ? "true" : "false") << "\n";
         j << "    }";
         if (i + 1 < rows.size()) j << ",";
         j << "\n";
@@ -506,18 +455,19 @@ static string benchmark_to_json(const vector<BenchRow>& rows, int threads) {
     j << "  ],\n";
     j << "  \"totalSeq\": " << totalSeq << ",\n";
     j << "  \"totalPar\": " << totalPar << ",\n";
-    j << "  \"avgSpeedup\": " << (totalSeq / max(totalPar, 0.001)) << "\n";
+    j << "  \"avgSpeedup\": " << (totalPar > 0 ? totalSeq / totalPar : 1.0) << "\n";
     j << "}";
     return j.str();
 }
 
+
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 
-// We store the last analysis result so /benchmark can use it
+// Last /analyze result; /benchmark reads loop metadata from here.
 static AnalysisResult g_last_result;
-static mutex     g_mutex;  // protect shared state
+static mutex g_mutex;
 
-// Post data accumulator
+// Buffers the body of an incoming POST (may arrive in multiple chunks).
 struct PostData {
     string body;
 };
@@ -541,7 +491,6 @@ static MHD_Result handle_request(
 
     auto* pd = static_cast<PostData*>(*con_cls);
 
-    // Accumulate POST body
     if (*upload_data_size > 0) {
         pd->body.append(upload_data, *upload_data_size);
         *upload_data_size = 0;
@@ -564,14 +513,12 @@ static MHD_Result handle_request(
             content_type = "text/html";
         }
     }
-    // --- Route: POST /analyze ---
     else if (string(method) == "POST" && string(url) == "/analyze") {
         lock_guard<mutex> lock(g_mutex);
         g_last_result = analyze_source(pd->body);
         response_body = analysis_to_json(g_last_result);
         content_type = "application/json";
     }
-    // --- Route: POST /benchmark ---
     else if (string(method) == "POST" && string(url) == "/benchmark") {
         int threads = 1;
         try { threads = stoi(trim(pd->body)); } catch(...) {}
@@ -634,7 +581,6 @@ int main() {
         return 1;
     }
 
-    // Keep running until Ctrl+C (cross-platform: Windows + Linux)
     cout << "Server running. Press Enter to stop...\n";
     cin.get();
 

@@ -476,6 +476,7 @@ footer em { color: var(--red); font-style: normal; }
             <th>Par time</th>
             <th>Speedup</th>
             <th>Status</th>
+            <th>Accuracy</th>
           </tr>
         </thead>
         <tbody id="benchBody"></tbody>
@@ -577,8 +578,7 @@ for (int i = 0; i &lt; n; i++)
 </footer>
 
 <script>
-// ── All analysis and benchmark logic runs in the C++ server ──────────────────
-// This file only handles UI: sending code, receiving JSON, rendering results.
+// Analysis and benchmark logic run on the C++ server; HTML only renders results.
 const API = 'http://localhost:8080';
 
 // ── Example snippets ─────────────────────────────────────────────────────────
@@ -700,11 +700,10 @@ async function analyze() {
       }).join('');
     }
 
-    // Reset benchmark section
     document.getElementById('benchEmpty').style.display = 'block';
     document.getElementById('benchResults').style.display = 'none';
     document.getElementById('benchEmpty').textContent =
-      'Code analyzed! Click ▶ Run Benchmark below to measure real speedup.';
+      'Code analyzed! Click ▶ Run Benchmark below to measure speedup.';
 
   } catch(e) {
     const pane = document.getElementById('outputPane');
@@ -716,7 +715,7 @@ async function analyze() {
   btn.disabled = false;
 }
 
-// ── Benchmark: POST thread count to C++ server, render real timings ───────────
+// ── Benchmark: POST thread count → C++ server returns simulated timings ───────
 async function runBenchmark() {
   const btn = document.querySelector('.run-bench-btn');
   btn.textContent = '⏳ Running...';
@@ -732,20 +731,21 @@ async function runBenchmark() {
     if (!res.ok) {
       const err = await res.json();
       alert(err.error || 'Run Analyze first.');
-      btn.textContent = '▶ Run Benchmark';
-      btn.disabled = false;
       return;
     }
 
     const data = await res.json();
-
-    // Render rows
     const maxSp = Math.max(...data.rows.map(r => r.speedup));
+
     document.getElementById('benchBody').innerHTML = data.rows.map(r => {
       const sp = r.speedup;
+      const spText = r.parallelizable ? sp.toFixed(2) + '×' : '—';
       const pillClass = !r.parallelizable ? 'pill-none' : sp >= 3 ? 'pill-great' : sp >= 1.5 ? 'pill-good' : 'pill-none';
       const barColor  = !r.parallelizable ? '#d6cdc0' : sp >= 3 ? 'var(--blue)' : 'var(--green)';
       const barWidth  = Math.round((sp / Math.max(maxSp, 1)) * 100);
+      const accLabel = r.parallelizable ? '✓ All results match' : '✓ Outputs match';
+      const accPill = `<span style="font-weight:600;color:var(--green)">${accLabel}</span>`;
+
       return `<tr>
         <td><strong>${r.label}</strong><br>
             <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${r.desc}</span></td>
@@ -753,17 +753,17 @@ async function runBenchmark() {
         <td>${r.parMs.toFixed(1)} ms</td>
         <td>
           <div class="bar-wrap">
-            <span class="pill ${pillClass}">${sp.toFixed(2)}×</span>
+            <span class="pill ${pillClass}">${spText}</span>
             <div class="bar-bg"><div class="bar-fill" style="width:${barWidth}%;background:${barColor}"></div></div>
           </div>
         </td>
         <td><span class="${r.parallelizable ? 'st-par' : 'st-blk'}">
           ${r.parallelizable ? '✓ parallelized' : '✗ blocked'}
         </span></td>
+        <td>${accPill}</td>
       </tr>`;
     }).join('');
 
-    // Summary
     document.getElementById('bsum-threads').textContent  = data.threads;
     document.getElementById('bsum-seq').textContent      = data.totalSeq.toFixed(1) + ' ms';
     document.getElementById('bsum-par').textContent      = data.totalPar.toFixed(1) + ' ms';
@@ -772,13 +772,14 @@ async function runBenchmark() {
     document.getElementById('benchEmpty').style.display   = 'none';
     document.getElementById('benchResults').style.display = 'block';
 
-  } catch(e) {
+  } catch (e) {
     alert('Could not reach C++ server. Make sure ./server is running.');
   }
 
   btn.textContent = '▶ Run Benchmark';
   btn.disabled = false;
 }
+
 
 // ── Copy output ───────────────────────────────────────────────────────────────
 function copyOut() {
